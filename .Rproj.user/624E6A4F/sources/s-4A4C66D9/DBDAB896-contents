@@ -1,0 +1,28 @@
+---
+title: statstest
+author: Vasyl Druchkiv
+date: '2019-11-04'
+slug: statstest
+categories:
+  - R
+tags: []
+
+output:
+  blogdown::html_page:
+    toc: true
+    fig_width: 6
+    dev: "svg"
+---
+
+# Problem
+
+Haha. Here you go! Simplicity is the beauty!
+
+```{r}
+x<-rnorm(100, -50,50)
+hist(x)
+```
+
+# Solution
+
+$S_n = \sum_{i=1}^n X_i$

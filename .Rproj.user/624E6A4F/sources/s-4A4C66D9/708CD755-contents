@@ -1,0 +1,422 @@
+---
+title: "Retinal detachment after open globe surgery"
+author: "statistics by Vasyl Druchkiv"
+date: "letzte Aktualisierung: `r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+    - \usepackage{setspace}\onehalfspacing
+    - \usepackage{caption}\captionsetup[figure]{name=Figure}
+    - \usepackage[font=Small]{subfig}
+    - \usepackage{courier}
+    - \usepackage{hyperref}
+    - \usepackage{booktabs}
+    - \usepackage{longtable}
+    - \usepackage{array}
+    - \usepackage{multirow}
+    - \usepackage{wrapfig}
+    - \usepackage{float}
+    - \usepackage{colortbl}
+    - \usepackage{pdflscape}
+    - \usepackage{tabu}
+    - \usepackage{graphicx}
+    - \makeatletter\renewcommand*{\fps@figure}{H}\makeatother
+    - \usepackage{threeparttable}
+    - \usepackage{fancyhdr}
+
+output:
+  pdf_document:
+    fig_caption: true
+    number_sections: true
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.kable.NA = '')
+```
+
+
+\pagestyle{fancy}
+\fancyhead[LE,RO]{}
+\fancyhead[LO,RE]{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancyhead[RO,RE]{\scriptsize{\textit{Vasyl Druchkiv, MSc. Biostatistics \& Bioinformatics, \href{mailto:druchkivstats@gmail.com}{druchkivstats@gmail.com}}}}
+
+
+\pagenumbering{gobble} 
+\tableofcontents
+\newpage
+\listoffigures
+\newpage
+\listoftables
+\newpage
+
+\pagenumbering{arabic} 
+
+```{r paquetes, message = FALSE, echo = FALSE, warning = FALSE}
+
+libraries <- c("ggplot2","ggpubr","plyr","knitr","kableExtra","tidyverse","ggsignif","ggthemes","dplyr","janitor")
+check.libraries <- is.element(libraries, installed.packages()[, 1])==FALSE
+libraries.to.install <- libraries[check.libraries]
+if (length(libraries.to.install!=0)) {
+  install.packages(libraries.to.install)
+}
+
+success <- sapply(libraries,require, quietly = FALSE,  character.only = TRUE)
+if(length(success) != length(libraries)) {stop("A package failed to return a success in require() function.")}
+
+```
+
+```{r datainit, echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+df<-read.csv(paste0("./data/","data.csv"),sep=",",
+             header=TRUE,na.strings = "n.a.")%>%
+  janitor::remove_empty_cols()
+
+keys<-read.csv(paste0("./data/","keys.csv"),sep=",",header=TRUE,stringsAsFactors = FALSE)
+df$enuc_why
+```
+
+
+```{r,echo=FALSE, warning=FALSE, message=FALSE}
+
+kable(keys, caption=paste0("Keys for variables"),align = c("l","l","c","c","c","c"),
+      col.names = c("Variable","Meaning","Format","Units","Levels","Lables"),
+      format = "latex",escape=T, booktabs = T, linesep = "",row.names = FALSE,digits=2) %>%
+      kable_styling(position = "center", 
+                latex_options=c("HOLD_position"),
+                font_size=5)
+```
+
+
+```{r,echo=FALSE, warning=FALSE, message=FALSE}
+#Recoding variables
+factors<-keys%>%filter(Format=="factor")
+for(i in 1:nrow(factors)){
+var<-factors$Varname[i]
+levels<-unlist(strsplit(factors$Levels[i],split=","))
+labels<-unlist(strsplit(factors$Lables[i],split=","))
+df[,var]<-factor(df[,var],levels = levels,labels = labels)
+}
+df<-df%>%
+  dplyr::mutate(time_to_rep=factor(time_to_rep,levels=0:2,labels = c("0-6hrs","6-12hrs","12-24hrs")),
+                 ots=factor(ifelse(ots>3,3,ots),levels = 1:3,labels = c("1","2","\u2265 3")))
+```
+
+
+
+```{r,echo=FALSE, warning=FALSE, message=FALSE,cache=TRUE,comment=NA}
+#Helper functions
+  plot.save <- function(plot, 
+                        width = 800, 
+                        height = 800, 
+                        text.factor = 1, 
+                        filename
+  ) {
+    dpi <- text.factor * 100
+    width.calc <- width / dpi
+    height.calc <- height / dpi
+    
+    ggsave(filename = paste0("./result/",filename,".jpg"),
+           dpi = dpi,
+           width = width.calc,
+           height = height.calc,
+           units = 'in',
+           plot = plot)
+  }
+
+ ThemeMain<-theme(title =element_text(size=15, face='bold'),
+                   axis.text = element_text(size=18),
+                   axis.title = element_text(size=20),
+                  legend.text = element_text(size=12),
+                  legend.title = element_text(size=12))
+
+ 
+stattab<-function(data,groupvar,testvars,cap,latex.labs.var.x){
+df_for_stat<-data%>%dplyr::select(groupvar,testvars)%>%
+  gather(key=key,value=value,-!!sym(groupvar))%>%dplyr::rename(groups=!!sym(groupvar))%>%filter(complete.cases(.))
+
+if(!missing(latex.labs.var.x)){
+df_for_stat<-df_for_stat%>%dplyr::mutate(groups=factor(groups,levels = levels(groups),labels=latex.labs.var.x))
+}
+
+nlev=length(unique(df_for_stat$groups))
+ncomp<-((nlev-1)*nlev)/2
+df_for_stat$key<-factor(df_for_stat$key,levels = testvars,labels = gsub("_"," ",testvars))
+df_for_stat<-df_for_stat%>%arrange(key)
+
+anno_df = compare_means(value~groups,method="wilcox.test", group.by = c("key"), data=df_for_stat,paired = FALSE)%>%dplyr::select(key,group1,group2,p)
+pvals<-anno_df%>%dplyr::mutate(p=pmin(1,p*ncomp))%>%
+  dplyr::mutate(p=ifelse(p<0.001,"<0.001",format(round(p,3),nsmall = 3)))%>% unite(VarT,group1,group2,sep="_")%>%
+  spread(VarT,p,fill=NA)
+
+res<-df_for_stat%>%group_by(groups,key) %>%
+  filter(!is.na(value)) %>%
+  dplyr::summarise(N=n(),min=min(value,na.rm=TRUE),max=max(value,na.rm=TRUE),mean=mean(value,na.rm=TRUE),sd=sd(value,na.rm=TRUE),
+                   median=median(value,na.rm=TRUE),q25=quantile(value,0.25,na.rm=TRUE),q75=quantile(value,0.75,na.rm=TRUE))%>%
+  mutate(Range=paste0(round(min,2),"/",round(max,2)),
+         Mean=paste0(round(mean,2)," (\u00B1",round(sd,2),")"),
+         Median=paste0(round(median,2)," (",round(q25,2),"/",round(q75,2),")"))%>%
+  dplyr::select(groups,key,N,Range:Median)
+ls<-list("df_for_stat"=df_for_stat, "anno_df"=anno_df,"res"=res)
+
+tab<-kable(res[,-2], caption = cap,format = "latex", booktabs = T,row.names=FALSE, escape=F, linesep = " ",align = c("l",rep("c",length(names(res))-1))) %>%
+  kable_styling(position = "center", 
+                latex_options=c("striped","HOLD_position"),
+                font_size=12)
+print(tab)
+return(ls)
+}
+```
+
+
+# Association between time of surgical repair (0-6 hours, 6-12 hours and after 12-24 hours) and final visual prognosis?
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+
+stat<-stattab(data=df,groupvar="time_to_rep",testvars=c("visus_1"),cap="Visual acuity (last follow up) by groups of time to repair")
+
+
+plotbox<-function(data,filename,xvar,yvar,sig.y_position,ylim,tip=0.03,sig.lable.y,ylab,xlab=""){
+
+data<-data%>%dplyr::select(xvar,yvar)%>%filter(complete.cases(.))
+
+anno_df<-compare_means(as.formula(paste0(yvar,"~",xvar)),method="wilcox.test", data=data,paired = FALSE)
+anno_df$p.signif<-symnum(anno_df$p.adj,cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1),symbols = c("<0.0001", "<0.001", "<0.01", "<0.05", "ns"))
+p<-ggboxplot(data, x = xvar, y = yvar,
+          fill = xvar, palette = "grey",outlier.shape = NA,add="mean")+
+  geom_point(aes(x = !!sym(xvar), color=!!sym(xvar)),position=position_jitterdodge(jitter.width = 0.2),alpha=0.4)+
+    theme_bw(base_size = 15)
+p<-ggpar(p,legend.title = "",xlab=xlab,ylab=ylab,guides(fill=FALSE))
+p<-p+ThemeMain+theme(panel.background = element_rect(fill = "white", colour = "black"),
+                     legend.position = "none",
+                     axis.text = element_text(face="bold"))+coord_cartesian(ylim=ylim)
+if(!missing(sig.y_position)){
+p<-p+ geom_signif(
+    data=anno_df, 
+    aes(xmin = group1, xmax = group2, annotations =p.signif,y_position=sig.y_position), 
+    manual= TRUE,textsize=6,tip_length = tip)
+}
+p=p+stat_compare_means(size=6,label.y=sig.lable.y) 
+plot.save(p,width = 1800, height = 1800, text.factor = 3,filename = filename)
+}
+plotbox(data=df,filename="VisusByTimeToRepair",xvar="time_to_rep",yvar="visus_1",sig.y_position=c(1.2,1.1,1.05),ylim=c(0,1.3),sig.lable.y=1.3,ylab="Visual acuity (last follow up)",xlab="Time to repair")
+
+```
+
+
+\begin{center}
+\includegraphics[width=0.7\linewidth]{`r paste0("./result/","VisusByTimeToRepair.jpg")`} \\
+ \captionof{figure}{Box plot. Visual acuity (last follow up) by groups of time to repair.}
+\end{center}
+
+
+# Association  between RD and Zone of Injury I-III
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+
+gen_crossstab<-function(var1,var2,var1_lab,var2_lab,cap,latex.labs.var1,test="chi"){
+nlev=length(levels(df[,var2]))
+if(!missing(latex.labs.var1)){
+df[,var1]<-factor(df[,var1],levels = levels(df[,var1]),labels=latex.labs.var1)
+}
+if(test=="chi"){
+pval=chisq.test(df[,var1],df[,var2])$p.value
+pval=ifelse(pval<0.001,"Chi square test, p<0.001",
+            paste0("Chi square test, p=",format(round(pval,3),nsmall = 3)))
+}
+if(test=="fisher"){
+pval=fisher.test(df[,var1],df[,var2])$p.value
+pval=ifelse(pval<0.001,"Fisher test, p<0.001",
+            paste0("Fisher test, p=",format(round(pval,3),nsmall = 3)))
+}
+res <- df %>% dplyr::rename(!!sym(var1_lab):=!!sym(var1),!!sym(var2_lab):=!!sym(var2))%>%
+  tabyl(!!sym(var1_lab), !!sym(var2_lab)) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+res<-as.data.frame(apply(res,2,function(x){gsub("\\%","\\\\%",x)}))
+myHeader <- c(" " = 1, var2_lab = nlev)
+names(myHeader) <- c(" ", var2_lab)
+
+tab<-kable(res, caption = cap,format = "latex", booktabs = T,row.names=FALSE, escape=F, linesep = " ",align = c("l",rep("c",length(names(res))-1))) %>%
+  kable_styling(position = "center", 
+                latex_options=c("striped","HOLD_position"),
+                font_size=12)%>%
+  add_header_above(myHeader)%>%
+  footnote(general = pval)
+
+print(tab)
+}
+
+gen_crossstab(var1="zoi",var2="rd",
+            var1_lab=keys$Varlab[keys$Varname=="zoi"],
+            var2_lab=keys$Varlab[keys$Varname=="rd"],    
+              cap="Retinal detachment by zone of injury")
+
+```
+
+
+# Association between final BCVA and Zone of injury
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+stat<-stattab(data=df,groupvar="zoi",testvars=c("visus_1"),cap="Visual acuity (last follow up) by OTS")
+
+plotbox(data=df,filename="VisusByZOI",xvar="zoi",yvar="visus_1",sig.y_position=c(1.2,1.1,1.05),ylim=c(0,1.3),sig.lable.y=1.3,ylab="Visual acuity (last follow up)",xlab="Zone of injury")
+
+```
+\begin{center}
+\includegraphics[width=0.7\linewidth]{`r paste0("./result/","VisusByZOI.jpg")`} \\
+ \captionof{figure}{Box plot. Visual acuity (last follow up) by ocular trauma score.}
+\end{center}
+
+
+
+# Association between final BCVA and OTS score
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+stat<-stattab(data=df,groupvar="ots",testvars=c("visus_1"),cap="Visual acuity (last follow up) by OTS",latex.labs.var.x=c("1","2","$\\geq$3"))
+
+plotbox(data=df,filename="VisusByOTS",xvar="ots",yvar="visus_1",sig.y_position=c(1.2,1.1,1.05),ylim=c(0,1.3),sig.lable.y=1.3,ylab="Visual acuity (last follow up)",xlab="Ocular trauma score")
+
+```
+\begin{center}
+\includegraphics[width=0.7\linewidth]{`r paste0("./result/","VisusByOTS.jpg")`} \\
+ \captionof{figure}{Box plot. Visual acuity (last follow up) by zone of injury.}
+\end{center}
+
+
+# Association between  RD and OTS Score
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+gen_crossstab(var1="ots",var2="rd",
+            var1_lab=keys$Varlab[keys$Varname=="ots"],
+            var2_lab=keys$Varlab[keys$Varname=="rd"], 
+            cap="Retinal detachment by OTS",latex.labs.var1 = c("1","2","$\\geq$3"))
+```
+
+# Association  between PVR Grade of RD and Zone of Injury I- III
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+stat<-stattab(data=df,groupvar="ots",testvars=c("pvr"),cap="PVR by ocular trauma score",latex.labs.var.x=c("1","2","$\\geq$3"))
+
+
+plotbox(data=df,filename="PVRByOTS",xvar="ots",yvar="pvr",sig.y_position=c(3,3.3,3.2),ylim=c(0,3.5),sig.lable.y=3.5,ylab="PVR Grade",xlab="Ocular trauma score")
+
+```
+
+\begin{center}
+\includegraphics[width=0.7\linewidth]{`r paste0("./result/","PVRByOTS.jpg")`} \\
+ \captionof{figure}{Box plot. PVR grade by ocular trauma score.}
+\end{center}
+
+
+
+# Association between number of surgeries- Zone of Injury
+
+Alle Patienten hatten einen primär Eingriff, sofern erneut operiert wurde ist es `rd_date`: date of retinal detachment surgery. Hiermit reduziert sich die Frage auf: Assiciation between retreatment abd zone of injury.
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+df<-df%>%dplyr::mutate(rd_reop=factor(ifelse(rd_date!="","Yes","No")))
+
+gen_crossstab(var1="zoi",var2="rd_reop",
+              var1_lab=keys$Varlab[keys$Varname=="zoi"],
+              var2_lab="Retreatment", 
+              cap="Retreatment by zone of injury")
+```
+
+
+
+
+# Association between number of surgeries- OTS Score12*
+
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+
+gen_crossstab(var1="ots",var2="rd_reop",
+              var1_lab=keys$Varlab[keys$Varname=="ots"],
+              var2_lab="Retreatment", 
+              cap="Retreatment by OTS",latex.labs.var1 = c("1","2","$\\geq$3"))
+```
+
+# Association between number of surgeries- initial BCVA
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+
+stat<-stattab(data=df,groupvar="rd_reop",testvars=c("visus_0"),cap="Inicial visus by retreatment")
+
+plotbox(data=df,filename="VisusPreByReop",xvar="rd_reop",yvar="visus_0",ylim=c(0,1.3),sig.lable.y=1.3,ylab="Initial visual acuity",xlab="Retreatment")
+
+```
+
+\begin{center}
+\includegraphics[width=0.7\linewidth]{`r paste0("./result/","VisusPreByReop.jpg")`} \\
+ \captionof{figure}{Box plot. Inicial visus by retreatment.}
+\end{center}
+
+
+# Association between enucleation and intraocular foreign body?
+
+Ommited
+
+# Association between enucleation and initial BCVA?
+
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+
+stat<-stattab(data=df,groupvar="enuc",testvars=c("visus_0"),cap="Inicial visus by enucleation")
+
+plotbox(data=df,filename="VisusPreByEnuc",xvar="enuc",yvar="visus_0",ylim=c(0,1.3),sig.lable.y=1.3,ylab="Initial visual acuity",xlab="Enucleation")
+
+
+```
+\begin{center}
+\includegraphics[width=0.7\linewidth]{`r paste0("./result/","VisusPreByEnuc.jpg")`} \\
+ \captionof{figure}{Box plot. Inicial visus by enucleation.}
+\end{center}
+
+# Association between penetrating and non penetrating injury?
+
+Ommited
+
+# Association between phthisis bulbi and OTS score?
+
+```{r  echo=FALSE, warning=FALSE, message=FALSE,tidy=TRUE,results='asis'}
+
+gen_crossstab(var1="ots",var2="enuc_why_pb",
+              var1_lab=keys$Varlab[keys$Varname=="ots"],
+              var2_lab=keys$Varlab[keys$Varname=="enuc_why_pb"],latex.labs.var1 = c("1","2","$\\geq$3"),
+              cap="Phthisis by OTS",test="fisher")
+```
+
+# Were there any cases of endophthalmitis?
+
+Wasn't assessed
+
+# Effect of PPV on BCVA pre and post OP!
+
+# Association between OTS score and need to perform PPV
+
+# Association between Zone of injury and need to perform PPV
+
+# Association between time of PPV and OTS score
+
+# Association between time of PPV and Zone of injury
+
+# What was the mean time interval between injury and PPV?
+
+# What was the mean interval between primary surgery and PPV?
+
+# How many preoperative RD? and how many remain detached at the last follow up?
+
+# How many of the NL eyes have recovered? BCVA more than NL
+
+# Association between number of surgical procedures and initial BCVA
+
+# Association between number of surgical procedures and OTS score?
+
+# Association between number of surgical procedures and Zone of injury ?
+
+
+
+
+
